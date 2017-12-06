@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang='en'>
+
+<head>
+    <title>nodejs chatrooms</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdn.bootcss.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u"
+        crossorigin="anonymous">
+    <script src="http://cdn.static.runoob.com/libs/angular.js/1.4.6/angular.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+
+<body ng-app="myApp" ng-controller="myCtrl">
+
+    <div id="rooms">
+        <ui>
+            <li ng-repeat="room in rooms">
+                {{room.name}},
+                <b>{{user.username}}</b>
+            </li>
+        </ui>
+    </div>
+
+    <div id="messages">
+        <p ng-repeat="message in messages">
+            > {{message.text}}
+        </p>
+    </div>
+
+    <input type="text" value="" ng-model="message" />
+    <input ng-click="send()" type="button" value='Enter' />
+</body>
+<script>
+    var app = angular.module("myApp", []);
+    app.controller("myCtrl", function ($scope) {
+
+        $scope.message = "";
+        $scope.messages = [];
+        $scope.rooms = [];
+        $scope.currentRoom = [];
+        $scope.loginState = false;
+        $scope.user = {};
+
+        var socket = io.connect('http://localhost:7367');
+        socket.on('message', function (message) {
+            if (message.type == 'loginResult') {
+                if (message.data) {
+                    $scope.loginState = true;
+                    $scope.user = message.data;
+                    $scope.$apply(function () {
+                        $scope.messages.push({
+                            text: "login confirmed"
+                        });
+                    })
+                }
+            } else if (message.type == 'logoutResult') {
+                $scope.loginState = false;
+                $scope.user = {};
+            } else {
+                $scope.$apply(function () {
+                    $scope.messages.push(message);
+                })
+            }
+        });
+
+        socket.on('joinResult', function (data) {
+            console.log('joinResult:' + JSON.stringify(data));
+        });
+
+        socket.on('rooms', function (rooms) {
+            $scope.$apply(function () {
+                $scope.rooms = rooms;
+                $scope.currentRoom = rooms[0];
+            })
+        });
+
+
+        socket.on('logoutResult', function (message) {
+            $scope.$apply(function () {
+                $scope.messages.push({
+                    text: message.text
+                });
+            })
+            $scope.loginState = false;
+        })
+
+        $scope.send = function () {
+            if ($scope.message.indexOf('login') >= 0) {
+                var cmdText = $scope.message.split(' ');
+                socket.emit(cmdText[0], {
+                    username: cmdText[1],
+                    password: cmdText[2]
+                });
+                $scope.messages.push({
+                    text: $scope.message
+                });
+            } else if ($scope.message.indexOf('newuser') >= 0) {
+                $scope.messages.push({
+                    text: $scope.message
+                });
+                var cmdText = $scope.message.split(' ');
+                socket.emit(cmdText[0], {
+                    username: cmdText[1],
+                    password: cmdText[2]
+                });
+            } else if ($scope.loginState == false) {
+                $scope.messages.push({
+                    text: "Denied. Please login first"
+                });
+            } else if ($scope.message.indexOf('logout') >= 0) {
+                var cmdText = $scope.message.split(' ');
+                socket.emit(cmdText[0], $scope.user);
+            } else if ($scope.message.indexOf('who') >= 0) {
+                socket.emit('who', {});
+            } else if ($scope.message.indexOf('send') >= 0) {
+                var cmdText = $scope.message.split(' ');
+                var action = cmdText[1];
+                cmdText.shift();
+                cmdText.shift();
+                var msg = cmdText.join(' ');
+                //send all
+                if (action == "all") {
+                    var message = {
+                        type: 'toRoom',
+                        room: $scope.currentRoom.name,
+                        text: $scope.user.username + ":" + msg
+                    };
+                    socket.emit('message', message);
+                    $scope.messages.push({
+                        text: message.text
+                    });
+                } else {
+                    //send userId
+                    var message = {
+                        type: 'toUser',
+                        username: action,
+                        text: $scope.user.username + "(to " + action + ") :" + msg
+                    };
+                    socket.emit('message', message);
+                }
+            }
+            $scope.message = "";
+        }
+    });
+</script>
+
+</html>
